@@ -1,0 +1,33 @@
+node_modules/
+build/
+dist/
+coverage/
+output/
+tmp/
+.DS_Store
+*.log
+*.pyc
+.env*
+!.env.example
+!.env.production.example
+.npm-cache/
+.smart-esgp-data/
+.smart-esgp-media/
+rendered/
+__pycache__/
+.agents/
+.codex/
+github_known_hosts
+
+# Local authentication files and private key material.
+.npmrc
+.netrc
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+
+# Machine-local Claude Code settings (hook paths point into the user home directory).
+.claude/

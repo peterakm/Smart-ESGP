@@ -1,0 +1,644 @@
+@import "@fontsource/inter/latin-400.css";
+@import "@fontsource/inter/latin-500.css";
+@import "@fontsource/inter/latin-600.css";
+@import "@fontsource/poppins/latin-600.css";
+@import "tailwindcss";
+
+@source not "../output";
+@source not "../dist";
+@source not "../.smart-esgp-data";
+
+/*
+ * Single source of truth for the Smart-ESGP look.
+ *
+ * The brand palette is expressed as Tailwind theme tokens, so `bg-emerald-600`,
+ * `text-rose-700`, `border-amber-200` and friends generate brand colours directly.
+ * Named workspace components below define layout, type hierarchy, and panel
+ * treatments. Keep semantic status colours in the shared palette.
+ */
+
+@theme {
+ --font-heading: Poppins, Inter, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+ --font-sans: Inter, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+ --font-mono: var(--font-sans);
+
+ /* Shared radii: one tight, near-uniform scale instead of per-component overrides. */
+ --radius-lg: 0.5rem;
+ --radius-xl: 0.625rem;
+ --radius-2xl: 0.75rem;
+
+ /* Canopy (environmental / positive) replaces the stock emerald ramp. */
+ --color-emerald-50: #f0f9f4;
+ --color-emerald-100: #e7f5ee;
+ --color-emerald-200: #c4e6d5;
+ --color-emerald-300: #93d3b5;
+ --color-emerald-400: #4fb489;
+ --color-emerald-500: #1f9268;
+ --color-emerald-600: #0f7a55;
+ --color-emerald-700: #075f43;
+ --color-emerald-800: #0a4a36;
+ --color-emerald-900: #0d372a;
+ --color-emerald-950: #102820;
+ --color-lime-300: #a7f06a;
+
+ /* Governance (structural / informational) replaces the stock indigo + blue ramps. */
+ --color-indigo-50: #f1f5f9;
+ --color-indigo-100: #e8eef4;
+ --color-indigo-200: #cbd9e7;
+ --color-indigo-300: #a3bcd3;
+ --color-indigo-400: #6b8fb2;
+ --color-indigo-500: #4a719a;
+ --color-indigo-600: #365a7d;
+ --color-indigo-700: #274762;
+ --color-indigo-800: #1e374d;
+ --color-indigo-900: #182b3c;
+ --color-indigo-950: #101d29;
+
+ --color-blue-50: #f1f5f9;
+ --color-blue-100: #e8eef4;
+ --color-blue-200: #cbd9e7;
+ --color-blue-700: #274762;
+
+ /* Harvest (attention / pending) replaces the stock amber ramp. */
+ --color-amber-50: #fffaf0;
+ --color-amber-100: #fff4d8;
+ --color-amber-200: #f7e3b0;
+ --color-amber-300: #ecc978;
+ --color-amber-400: #dcac4a;
+ --color-amber-500: #c8912e;
+ --color-amber-600: #b57f21;
+ --color-amber-700: #a96f16;
+ --color-amber-800: #855611;
+ --color-amber-900: #66420e;
+ --color-amber-950: #40290a;
+
+ /* Audit (risk / destructive) replaces the stock rose + red ramps. */
+ --color-rose-50: #fff6f4;
+ --color-rose-100: #fff0ed;
+ --color-rose-200: #f8d4cd;
+ --color-rose-300: #eeaba0;
+ --color-rose-400: #de7666;
+ --color-rose-500: #d15a49;
+ --color-rose-600: #c94b3d;
+ --color-rose-700: #a7352d;
+ --color-rose-800: #862a24;
+ --color-rose-900: #66201c;
+ --color-rose-950: #3f1411;
+
+ --color-red-50: #fff6f4;
+ --color-red-100: #fff0ed;
+ --color-red-200: #f8d4cd;
+ --color-red-500: #d15a49;
+ --color-red-600: #c94b3d;
+
+ /* Neutral ink, tuned warm-green rather than blue-grey. */
+ --color-slate-50: #f7faf8;
+ --color-slate-100: #eef3f0;
+ --color-slate-200: #dbe6df;
+ --color-slate-300: #c2d1c9;
+ --color-slate-400: #94a69d;
+ --color-slate-500: #6e7f77;
+ --color-slate-600: #55655e;
+ --color-slate-700: #3f4d47;
+ --color-slate-800: #2b3833;
+ --color-slate-900: #1c2723;
+ --color-slate-950: #14241f;
+}
+
+html {
+ background: #edf4f1;
+}
+
+#root {
+ min-height: 100dvh;
+}
+
+body {
+ margin: 0;
+ min-width: 320px;
+ background: linear-gradient(180deg, #f7faf8 0%, #eef5f1 58%, #e8eff0 100%);
+ color: var(--color-slate-950);
+ font-family: var(--font-sans);
+ font-size: 16px;
+ line-height: 24px;
+ font-weight: 400;
+ text-rendering: optimizeLegibility;
+ -webkit-font-smoothing: antialiased;
+}
+
+@media (min-width: 1024px) {
+ html,
+ body,
+ #root {
+ width: 100%;
+ height: 100%;
+ min-height: 100%;
+ overflow: hidden;
+ }
+
+ #main-container {
+ position: fixed;
+ inset: 0;
+ width: 100%;
+ height: 100vh;
+ min-height: 100vh;
+ overflow: hidden;
+ }
+
+ #workspace-shell,
+ #auditor-sidebar,
+ #workspace-scroll-panel {
+ height: 100vh;
+ max-height: 100vh;
+ min-height: 0;
+ }
+
+ #workspace-scroll-panel {
+ overflow-x: hidden;
+ overflow-y: auto;
+ }
+}
+
+@supports (height: 100dvh) {
+ @media (min-width: 1024px) {
+ #main-container,
+ #workspace-shell,
+ #auditor-sidebar,
+ #workspace-scroll-panel {
+ height: 100dvh;
+ max-height: 100dvh;
+ }
+ }
+}
+
+/* Controlled product type system. */
+#main-container {
+ font-feature-settings: "cv02" 1, "cv03" 1, "cv04" 1, "tnum" 1;
+}
+
+#main-container,
+#dealer-dashboard-workspace,
+#verification-portal-root,
+#mspo-cert-modal {
+ font-family: var(--font-sans);
+ font-size: 16px;
+ line-height: 24px;
+ font-weight: 400;
+ letter-spacing: 0;
+}
+
+#main-container :where(.font-extrabold, .font-black),
+#dealer-dashboard-workspace :where(.font-extrabold, .font-black),
+#verification-portal-root :where(.font-extrabold, .font-black),
+#mspo-cert-modal :where(.font-extrabold, .font-black) {
+ font-weight: 600;
+}
+
+#main-container :where(.font-bold),
+#dealer-dashboard-workspace :where(.font-bold),
+#verification-portal-root :where(.font-bold),
+#mspo-cert-modal :where(.font-bold) {
+ font-weight: 500;
+}
+
+/* Preserve the certificate sheet's existing print typography. */
+#mspo-cert-modal * { letter-spacing: 0; }
+
+#main-container :where(.uppercase),
+#dealer-dashboard-workspace :where(.uppercase),
+#verification-portal-root :where(.uppercase),
+#mspo-cert-modal :where(.uppercase) {
+ text-transform: none;
+}
+
+#main-container :where(h1, h2, h3, h4, h5, h6),
+#dealer-dashboard-workspace :where(h1, h2, h3, h4, h5, h6),
+#verification-portal-root :where(h1, h2, h3, h4, h5, h6),
+#mspo-cert-modal :where(h1, h2, h3, h4, h5, h6),
+.type-page-title,
+.type-section-title,
+.type-card-heading {
+ font-family: var(--font-heading);
+ font-weight: 600;
+ letter-spacing: 0;
+ text-transform: none;
+}
+
+#main-container :where(h1, .type-page-title),
+#dealer-dashboard-workspace :where(h1, .type-page-title),
+#verification-portal-root :where(h1, .type-page-title),
+#mspo-cert-modal :where(h1, .type-page-title) {
+ font-size: 28px;
+ line-height: 36px;
+}
+
+#auditor-topbar h1 {
+ max-width: calc(100vw - 92px);
+ white-space: normal;
+ overflow-wrap: break-word;
+}
+
+@media (min-width: 1280px) {
+ #auditor-topbar h1 {
+  max-width: none;
+ }
+}
+
+#main-container :where(h2, .type-section-title),
+#dealer-dashboard-workspace :where(h2, .type-section-title),
+#verification-portal-root :where(h2, .type-section-title),
+#mspo-cert-modal :where(h2, .type-section-title) {
+ font-size: 20px;
+ line-height: 28px;
+}
+
+#main-container :where(h3, h4, h5, h6, .type-card-heading),
+#dealer-dashboard-workspace :where(h3, h4, h5, h6, .type-card-heading),
+#verification-portal-root :where(h3, h4, h5, h6, .type-card-heading),
+#mspo-cert-modal :where(h3, h4, h5, h6, .type-card-heading) {
+ font-size: 16px;
+ line-height: 24px;
+}
+
+#main-container :where(p, li, dd, input, textarea, select),
+#dealer-dashboard-workspace :where(p, li, dd, input, textarea, select),
+#verification-portal-root :where(p, li, dd, input, textarea, select),
+#mspo-cert-modal :where(p, li, dd, input, textarea, select),
+.type-body {
+ font-family: var(--font-sans);
+ font-size: 14px;
+ line-height: 20px;
+ font-weight: 400;
+}
+
+.type-body-lg {
+ font-family: var(--font-sans);
+ font-size: 16px;
+ line-height: 24px;
+ font-weight: 400;
+}
+
+#main-container :where(.text-xs, dt, label),
+#dealer-dashboard-workspace :where(.text-xs, dt, label),
+#verification-portal-root :where(.text-xs, dt, label),
+#mspo-cert-modal :where(.text-xs, dt, label),
+.type-label {
+ font-family: var(--font-sans);
+ font-size: 12px;
+ line-height: 18px;
+ font-weight: 500;
+}
+
+#main-container :where(table, th, td),
+#dealer-dashboard-workspace :where(table, th, td),
+#verification-portal-root :where(table, th, td),
+.type-table {
+ font-family: var(--font-sans);
+ font-size: 14px;
+ line-height: 20px;
+ font-weight: 400;
+}
+
+.type-metric,
+#kpi-cards [data-metric],
+#triage-queue-tiles [data-metric],
+#verification-portal-root [data-metric] {
+ font-family: var(--font-sans);
+ font-size: 28px;
+ line-height: 36px;
+ font-weight: 600;
+ font-variant-numeric: tabular-nums;
+ font-feature-settings: "tnum" 1;
+}
+
+#dealer-dashboard-workspace,
+#verification-portal-root {
+ max-width: 1440px;
+ margin-inline: auto;
+}
+
+/* Panel treatments that need multi-stop gradients. */
+#auditor-sidebar,
+#mobile-nav-drawer {
+ background: linear-gradient(180deg, #102820 0%, #0b1d18 100%);
+}
+
+#whatsapp-operations-monitor > div:first-child {
+ background:
+ linear-gradient(135deg, rgba(15, 122, 85, 0.98), rgba(15, 138, 131, 0.9) 48%, rgba(16, 40, 32, 0.98)),
+ var(--color-emerald-950);
+}
+
+#dealer-dashboard-workspace :where(section, div, details)[id] {
+ scroll-margin-top: 96px;
+}
+
+#auditor-triage-band {
+ background:
+ linear-gradient(135deg, #102820 0%, #0f3d31 52%, #0f7a55 100%),
+ var(--color-emerald-950);
+ isolation: isolate;
+}
+
+#auditor-triage-band::before {
+ content: "";
+ position: absolute;
+ inset: 0;
+ z-index: 0;
+ pointer-events: none;
+ background:
+ linear-gradient(90deg, rgba(255,255,255,0.07) 1px, transparent 1px),
+ linear-gradient(180deg, rgba(255,255,255,0.06) 1px, transparent 1px);
+ background-size: 44px 44px;
+ -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 24%, #000 100%);
+ mask-image: linear-gradient(90deg, transparent 0%, #000 24%, #000 100%);
+ opacity: 0.26;
+}
+
+#flagged-banner {
+ background: linear-gradient(135deg, var(--color-rose-100) 0%, #fff8f5 100%);
+ border-left: 5px solid var(--color-rose-600);
+}
+
+#valid-banner {
+ background: linear-gradient(135deg, var(--color-emerald-100) 0%, #f7fff9 100%);
+ border-left: 5px solid var(--color-emerald-600);
+}
+
+#in-progress-banner {
+ background: linear-gradient(135deg, var(--color-indigo-100) 0%, #ffffff 100%);
+ border-left: 5px solid var(--color-indigo-600);
+}
+
+/* Metrics use a consistent neutral frame; icon and value colours convey status. */
+#kpi-cards > div {
+ min-height: 152px;
+}
+
+/* Status pills must never wrap mid-label. */
+#dealer-dashboard-workspace .rounded-full,
+#verification-portal-root .rounded-full {
+ white-space: nowrap;
+}
+
+#dealer-dashboard-workspace table th,
+#dealer-dashboard-workspace table td,
+#verification-portal-root table th,
+#verification-portal-root table td {
+ vertical-align: middle;
+}
+
+#farmers-data-table tbody tr[data-selected] {
+ background: var(--color-indigo-50);
+}
+
+#task-sections-scroll,
+#mobile-task-sections-scroll {
+ scrollbar-color: rgba(231, 245, 238, 0.42) transparent;
+ scrollbar-width: thin;
+}
+
+#task-sections-scroll::-webkit-scrollbar,
+#mobile-task-sections-scroll::-webkit-scrollbar {
+ width: 6px;
+}
+
+#task-sections-scroll::-webkit-scrollbar-track,
+#mobile-task-sections-scroll::-webkit-scrollbar-track {
+ background: transparent;
+}
+
+#task-sections-scroll::-webkit-scrollbar-thumb,
+#mobile-task-sections-scroll::-webkit-scrollbar-thumb {
+ background: rgba(231, 245, 238, 0.42);
+ border-radius: 999px;
+}
+
+#felda-evidence-review-queue summary::-webkit-details-marker,
+#smart-esgp-about summary::-webkit-details-marker {
+ display: none;
+}
+
+/* Layout that utilities cannot express. */
+#whatsapp-operations-monitor {
+ container-type: inline-size;
+}
+
+#whatsapp-operations-monitor > div,
+#whatsapp-operations-monitor .grid > div,
+#whatsapp-operations-monitor .grid > button {
+ min-width: 0;
+}
+
+@container (max-width: 720px) {
+ #whatsapp-claim-monitor .grid {
+ grid-template-columns: repeat(2, minmax(0, 1fr));
+ }
+}
+
+@media (min-width: 1024px) {
+ /* The detail column flows around the map so tall cards do not leave dead space. */
+ #audit-detail-grid {
+ align-items: start;
+ grid-auto-flow: dense;
+ }
+
+ #audit-detail-grid > div:first-child {
+ display: contents;
+ }
+
+ #audit-detail-grid > div:first-child > * {
+ order: 3;
+ min-width: 0;
+ }
+
+ #audit-detail-grid > div:first-child > *:first-child {
+ order: 1;
+ }
+
+ #audit-detail-grid > div:last-child {
+ order: 2;
+ min-width: 0;
+ }
+}
+
+/* A single, consistent focus ring for every workspace control. */
+#main-container :where(a, button, input, select, textarea, summary):focus-visible {
+ outline: 3px solid rgba(15, 122, 85, 0.55);
+ outline-offset: 2px;
+}
+
+/* Workspace shell */
+#main-container { background: var(--color-slate-50); }
+
+#workspace-shell { grid-template-columns: 256px minmax(0, 1fr); }
+
+#auditor-sidebar > div:first-child { padding: 26px 20px; }
+#brand-home-button > div:first-child { width: 44px; height: 44px; flex-shrink: 0; }
+#workspace-tabs { padding: 20px 14px; }
+#workspace-tabs > div:first-child { display: grid; gap: 6px; }
+#workspace-tabs > div:first-child button { padding: 12px; }
+#workspace-tabs > div:first-child button[aria-current="page"] {
+ background: var(--color-emerald-800);
+ color: white;
+ box-shadow: inset 3px 0 0 var(--color-emerald-300);
+}
+#workspace-tabs button[aria-current="page"] :where(svg, span) { color: inherit; }
+#workspace-tabs button[aria-current="page"] span span:last-child { color: var(--color-emerald-200); }
+#task-sections-scroll button { gap: 12px; font-size: 13px; padding-inline: 12px; }
+#task-sections-scroll button[aria-current="location"] { background: rgb(255 255 255 / 9%); color: white; }
+
+.workspace-sidebar-footer {
+ display: flex;
+ align-items: center;
+ gap: 12px;
+ padding: 20px;
+ border-top: 1px solid rgb(255 255 255 / 10%);
+}
+.workspace-avatar {
+ display: grid;
+ place-items: center;
+ width: 36px;
+ height: 36px;
+ flex-shrink: 0;
+ border: 1px solid rgb(255 255 255 / 20%);
+ border-radius: 50%;
+ background: var(--color-emerald-800);
+ font-size: 14px;
+ font-weight: 600;
+}
+#auditor-topbar > div { padding: 16px 32px; flex-direction: row; align-items: center; }
+#auditor-topbar > div > div:first-child { width: auto; }
+#auditor-topbar > div > div:last-child { flex-shrink: 0; }
+#auditor-topbar h1 { font-size: 22px; line-height: 30px; letter-spacing: -0.5px; }
+#auditor-topbar .workspace-eyebrow { font-size: 11px; line-height: 18px; color: var(--color-slate-600); margin-bottom: 2px; }
+.workspace-eyebrow span { margin-inline: 5px; color: var(--color-slate-400); }
+#auditor-topbar [aria-label="Dashboard language"] { padding: 3px; border-radius: 9px; }
+#auditor-topbar [aria-label="Dashboard language"] button { padding-inline: 10px; }
+#workspace-scroll-panel { scrollbar-gutter: stable; scrollbar-color: var(--color-slate-300) transparent; scrollbar-width: thin; }
+#workspace-main { padding-top: 24px; }
+
+/* Review overview: one headline, selected plot context, and equal queue targets. */
+.data-provenance-live { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+#auditor-triage-band { padding: 24px; border-radius: 14px; }
+#auditor-triage-band::before { opacity: 0.12; }
+.triage-layout { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; align-items: center; }
+.triage-overview { min-width: 0; }
+#auditor-triage-title { font-size: 26px; line-height: 34px; letter-spacing: -0.6px; }
+.triage-evidence { grid-column: 2; grid-row: 1; }
+.triage-evidence > div:first-child > span { width: 32px; height: 32px; background: rgb(255 255 255 / 10%); color: var(--color-emerald-200); }
+.triage-actions { grid-column: 1 / -1; }
+#triage-queue-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.triage-secondary { display: contents; }
+#triage-queue-tiles button { min-height: 106px; padding: 14px 12px; gap: 10px; border-radius: 9px; }
+#triage-queue-tiles .triage-primary { flex-direction: row; align-items: center; }
+#triage-queue-tiles button > span:first-child { width: 30px; height: 30px; flex-shrink: 0; }
+#triage-queue-tiles button > svg { width: 14px; height: 14px; }
+#triage-queue-tiles [data-metric] { font-size: 24px; line-height: 30px; }
+#triage-queue-tiles button:hover { border-color: var(--color-emerald-200); }
+#main-container #triage-queue-tiles button:focus-visible { outline-color: var(--color-emerald-200); }
+.metric-card .metric-icon { position: absolute; top: 18px; right: 18px; width: 34px; height: 34px; }
+.metric-label { display: block; padding-right: 40px; min-height: 24px; }
+#kpi-cards [data-metric] { font-size: 32px; line-height: 40px; letter-spacing: -1px; }
+
+/* The registry has the full workspace width, with its tools grouped above. */
+.registry-tools { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.registry-tools > * { min-width: 0; }
+#farmer-filter-panel { gap: 12px; }
+#farmer-filter-panel > div:nth-of-type(1) > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin-top: 0; }
+#farmer-filter-panel > div:nth-of-type(2) { padding-top: 12px; }
+/* Grid, not flex: the row carries Tailwind's flex-col, so a flex basis here would size button height. */
+#farmer-filter-panel > div:nth-of-type(2) > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 4px; margin-top: 0; }
+#farmer-filter-panel > div:nth-of-type(2) button { width: 100%; gap: 8px; }
+#farmer-filter-panel > p { padding-top: 12px; }
+#farmers-table-section { gap: 0; border: 1px solid var(--color-slate-200); border-radius: 12px; background: white; overflow: hidden; box-shadow: 0 2px 4px rgb(16 40 32 / 3%); }
+.registry-toolbar { padding: 20px; }
+#farmers-table-section > div:last-child { border: 0; border-radius: 0; box-shadow: none; }
+.registry-table-scroll { scrollbar-width: thin; scrollbar-color: var(--color-slate-300) var(--color-slate-50); }
+#farmers-data-table { min-width: 960px; }
+#farmers-data-table th { font-size: 12px; font-weight: 500; padding: 8px 12px; white-space: nowrap; border-top: 1px solid var(--color-slate-200); }
+#farmers-data-table td { padding: 14px 12px; font-size: 13px; }
+#farmers-data-table td:nth-child(2) { min-width: 165px; }
+#farmers-data-table td:nth-child(3), #farmers-data-table td:nth-child(7) { white-space: nowrap; }
+#farmers-data-table td:last-child > div { flex-wrap: nowrap; }
+#farmers-data-table tbody tr[data-selected] { background: var(--color-emerald-50); box-shadow: inset 3px 0 0 var(--color-emerald-600); border-left: 0; }
+#farmers-data-table tbody tr:hover { background: var(--color-slate-100); }
+#farmer-detail-drilldown { margin-top: 8px; padding-top: 28px; }
+#farmer-detail-drilldown > div:first-child { margin-bottom: 20px; }
+#audit-detail-grid { gap: 20px; }
+#verification-portal-root .verification-content > .grid { gap: 20px; }
+.verification-file-header { border-left: 3px solid var(--color-emerald-600); }
+#verification-portal-root :where(#valid-banner, #flagged-banner, #in-progress-banner) { padding: 24px; text-align: left; }
+
+/* Loading and interaction states */
+.workspace-loading { min-height: 420px; color: var(--color-slate-600); }
+.workspace-loading-bar { display: block; height: 200px; border-radius: 14px; background: var(--color-slate-200); }
+.workspace-loading p { margin-block: 16px; }
+.workspace-loading-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.workspace-loading-grid span { height: 140px; border-radius: 12px; border: 1px solid var(--color-slate-200); background: white; }
+#main-container :where(button, a, input, select, textarea, summary) { -webkit-tap-highlight-color: transparent; }
+#main-container :where(button, a, summary) { touch-action: manipulation; }
+#main-container button:disabled { cursor: not-allowed; }
+#main-container :where(button, input, textarea, select) { transition-property: background-color, border-color, color, box-shadow; transition-duration: 150ms; }
+#main-container :where(a, button, input, select, textarea, summary, [tabindex="0"]):focus-visible { outline: 3px solid var(--color-emerald-600); outline-offset: 3px; }
+#main-container :where(#auditor-sidebar, #mobile-nav-drawer) button:focus-visible { outline-color: var(--color-emerald-200); }
+
+@media (max-width: 1279px) {
+ .triage-layout { gap: 18px; }
+ #triage-queue-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+ .registry-tools { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 767px) {
+ #auditor-topbar > div { padding: 12px 16px; gap: 8px; }
+ #auditor-topbar h1 { font-size: 18px; line-height: 25px; }
+ #auditor-topbar .workspace-eyebrow { font-size: 10px; }
+ #auditor-topbar .workspace-eyebrow span { margin-inline: 2px; }
+ #auditor-topbar [aria-label="Dashboard language"] button { padding-inline: 5px; }
+ #workspace-main { padding-top: 16px; }
+ #dealer-dashboard-workspace { gap: 20px; }
+ #auditor-triage-band { padding: 20px; }
+ .triage-layout { grid-template-columns: minmax(0, 1fr); }
+ .triage-evidence { grid-column: 1; grid-row: auto; }
+ .triage-actions { grid-row: 2; }
+ #triage-queue-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+ #triage-queue-tiles > button:first-child { grid-column: 1 / -1; }
+ #triage-queue-tiles button { min-height: 88px; }
+ #triage-queue-tiles .triage-secondary button > span:first-child,
+ #triage-queue-tiles .triage-secondary button > svg { display: none; }
+ .triage-evidence-signals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+ .registry-toolbar { padding: 16px; }
+ #kpi-cards { gap: 12px; }
+ #kpi-cards > div { min-height: 142px; padding: 16px; }
+ #kpi-cards [data-metric] { font-size: 28px; line-height: 36px; }
+ .metric-card .metric-icon { right: 14px; top: 14px; width: 30px; height: 30px; }
+ #farmer-filter-panel > div:nth-of-type(1) > div,
+ #farmer-filter-panel > div:nth-of-type(2) > div { grid-template-columns: minmax(0, 1fr); }
+ #verification-portal-root :where(#valid-banner, #flagged-banner, #in-progress-banner) { padding: 20px; }
+ #verification-portal-root .rounded-full { white-space: normal; }
+ #dealer-dashboard-workspace .rounded-full { white-space: normal; }
+ #farmers-data-table .rounded-full { white-space: nowrap; }
+ .workspace-loading-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 639px) {
+ #kpi-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+ #kpi-cards .metric-icon { display: none; }
+ #kpi-cards .metric-label { padding-right: 0; min-height: 40px; }
+}
+
+@media (max-width: 420px) {
+ #auditor-topbar > div { flex-wrap: wrap; }
+ #auditor-topbar > div > div:last-child { margin-left: 56px; }
+ #auditor-topbar .workspace-eyebrow { font-size: 11px; }
+ #dealer-dashboard-workspace :where(section, div, details)[id] { scroll-margin-top: 180px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+ #main-container *, #main-container *::before, #main-container *::after {
+ animation-duration: 0.01ms !important;
+ animation-iteration-count: 1 !important;
+ transition-duration: 0.01ms !important;
+ scroll-behavior: auto !important;
+ }
+}

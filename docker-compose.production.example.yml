@@ -1,0 +1,145 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-smart_esgp}
+      POSTGRES_USER: ${POSTGRES_USER:-smart_esgp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - smart-esgp-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:RELEASE.2026-07-13T20-38-28Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-smart-esgp-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+    ports:
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - smart-esgp-minio:/data
+
+  minio-init:
+    image: minio/mc:RELEASE.2026-07-21T05-28-08Z
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}; do sleep 2; done;
+      mc mb --ignore-existing local/$${SMART_ESGP_S3_BUCKET};
+      mc anonymous set none local/$${SMART_ESGP_S3_BUCKET};
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-smart-esgp-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      SMART_ESGP_S3_BUCKET: ${SMART_ESGP_S3_BUCKET:-smart-esgp-private-evidence}
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-smart_esgp}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-smart_esgp}
+      SMART_ESGP_REPOSITORY: postgres
+    command: ["node", "scripts/run-postgres-migrations.mjs"]
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      PORT: 3000
+      SMART_ESGP_DEPLOYMENT_ENV: production
+      SMART_ESGP_ALLOWED_ORIGINS: ${SMART_ESGP_ALLOWED_ORIGINS:-}
+      SMART_ESGP_TRUST_PROXY: ${SMART_ESGP_TRUST_PROXY:-true}
+      SMART_ESGP_FORCE_HTTPS: ${SMART_ESGP_FORCE_HTTPS:-true}
+      SMART_ESGP_HSTS_MAX_AGE_SECONDS: ${SMART_ESGP_HSTS_MAX_AGE_SECONDS:-31536000}
+      SMART_ESGP_ACCESS_LOGS: ${SMART_ESGP_ACCESS_LOGS:-true}
+      SMART_ESGP_CHAT_RATE_LIMIT_PER_MINUTE: ${SMART_ESGP_CHAT_RATE_LIMIT_PER_MINUTE:-30}
+      SMART_ESGP_CERTIFICATE_VERIFY_RATE_LIMIT_PER_MINUTE: ${SMART_ESGP_CERTIFICATE_VERIFY_RATE_LIMIT_PER_MINUTE:-60}
+      SMART_ESGP_WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MINUTE: ${SMART_ESGP_WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MINUTE:-300}
+      SMART_ESGP_WHATSAPP_MANUAL_SEND_RATE_LIMIT_PER_MINUTE: ${SMART_ESGP_WHATSAPP_MANUAL_SEND_RATE_LIMIT_PER_MINUTE:-60}
+      SMART_ESGP_WHATSAPP_CLAIM_TTL_SECONDS: ${SMART_ESGP_WHATSAPP_CLAIM_TTL_SECONDS:-300}
+      SMART_ESGP_RETAIN_WHATSAPP_RAW_PAYLOADS: ${SMART_ESGP_RETAIN_WHATSAPP_RAW_PAYLOADS:-false}
+      SMART_ESGP_REPOSITORY: postgres
+      DATABASE_URL: postgresql://${POSTGRES_USER:-smart_esgp}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-smart_esgp}
+      SMART_ESGP_MEDIA_STORAGE: s3
+      SMART_ESGP_S3_BUCKET: ${SMART_ESGP_S3_BUCKET:-smart-esgp-private-evidence}
+      SMART_ESGP_S3_REGION: ${SMART_ESGP_S3_REGION:-ap-southeast-1}
+      SMART_ESGP_S3_ENDPOINT: http://minio:9000
+      SMART_ESGP_S3_FORCE_PATH_STYLE: "true"
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-smart-esgp-minio}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      SMART_ESGP_REQUIRE_AUTH: "true"
+      SMART_ESGP_VIEWER_TOKEN: ${SMART_ESGP_VIEWER_TOKEN:-}
+      SMART_ESGP_AUDITOR_TOKEN: ${SMART_ESGP_AUDITOR_TOKEN:?set SMART_ESGP_AUDITOR_TOKEN}
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  whatsapp:
+    build:
+      context: .
+      dockerfile: Dockerfile.whatsapp
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      WHATSAPP_PORT: 3100
+      SMART_ESGP_DEPLOYMENT_ENV: production
+      SMART_ESGP_ALLOWED_ORIGINS: ${SMART_ESGP_ALLOWED_ORIGINS:-}
+      SMART_ESGP_TRUST_PROXY: ${SMART_ESGP_TRUST_PROXY:-true}
+      SMART_ESGP_FORCE_HTTPS: ${SMART_ESGP_FORCE_HTTPS:-true}
+      SMART_ESGP_HSTS_MAX_AGE_SECONDS: ${SMART_ESGP_HSTS_MAX_AGE_SECONDS:-31536000}
+      SMART_ESGP_ACCESS_LOGS: ${SMART_ESGP_ACCESS_LOGS:-true}
+      SMART_ESGP_WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MINUTE: ${SMART_ESGP_WHATSAPP_WEBHOOK_RATE_LIMIT_PER_MINUTE:-300}
+      SMART_ESGP_WHATSAPP_MANUAL_SEND_RATE_LIMIT_PER_MINUTE: ${SMART_ESGP_WHATSAPP_MANUAL_SEND_RATE_LIMIT_PER_MINUTE:-60}
+      SMART_ESGP_WHATSAPP_CLAIM_TTL_SECONDS: ${SMART_ESGP_WHATSAPP_CLAIM_TTL_SECONDS:-300}
+      SMART_ESGP_RETAIN_WHATSAPP_RAW_PAYLOADS: ${SMART_ESGP_RETAIN_WHATSAPP_RAW_PAYLOADS:-false}
+      SMART_ESGP_REPOSITORY: postgres
+      DATABASE_URL: postgresql://${POSTGRES_USER:-smart_esgp}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-smart_esgp}
+      SMART_ESGP_MEDIA_STORAGE: s3
+      SMART_ESGP_S3_BUCKET: ${SMART_ESGP_S3_BUCKET:-smart-esgp-private-evidence}
+      SMART_ESGP_S3_REGION: ${SMART_ESGP_S3_REGION:-ap-southeast-1}
+      SMART_ESGP_S3_ENDPOINT: http://minio:9000
+      SMART_ESGP_S3_FORCE_PATH_STYLE: "true"
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-smart-esgp-minio}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_GRAPH_API_VERSION: ${WHATSAPP_GRAPH_API_VERSION:-v23.0}
+      WHATSAPP_REQUEST_TIMEOUT_MS: ${WHATSAPP_REQUEST_TIMEOUT_MS:-10000}
+      SMART_ESGP_REQUIRE_AUTH: "true"
+      SMART_ESGP_AUDITOR_TOKEN: ${SMART_ESGP_AUDITOR_TOKEN:?set SMART_ESGP_AUDITOR_TOKEN}
+    ports:
+      - "3100:3100"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3100/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  smart-esgp-postgres:
+  smart-esgp-minio:
