@@ -1013,9 +1013,15 @@ export default function App() {
  ))}
  </div>
  {systemAuditAlertEvents.length > 0 && (
- <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 shadow-sm">
+ <button
+ type="button"
+ onClick={() => handleDashboardAnchor('system-audit-alerts')}
+ aria-label={`View ${systemAuditAlertEvents.length} audit alerts`}
+ className="h-11 rounded-xl border border-amber-200 bg-amber-50 px-3 shadow-sm transition-colors cursor-pointer hover:border-amber-300 hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+ id="btn-header-audit-alerts"
+ >
  <span className="text-xs font-medium text-amber-800">{systemAuditAlertEvents.length} audit alerts</span>
- </div>
+ </button>
  )}
  </div>
  </div>
