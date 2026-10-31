@@ -10,7 +10,11 @@ import { applyRequestContext } from './src/server/requestContext';
 import { createRuntimeReadinessWithRepository } from './src/server/runtimeReadiness';
 import { applySecurityBaseline } from './src/server/securityMiddleware';
 import { startHttpService } from './src/server/serviceLifecycle';
-import { assertSecureProductionStartup } from './src/server/startupGuard';
+import {
+  assertSecureProductionStartup,
+  resolveListenHost,
+  warnIfProductionBuildWithoutProductionEnv,
+} from './src/server/startupGuard';
 import { resolveWhatsAppRawPayloadRetention } from './src/server/whatsappRawPayloadRetention';
 import { createSystemAuditEvent, maskPhoneNumber } from './src/server/systemAudit';
 import { createWhatsAppRouter } from './src/server/whatsappRoutes';
@@ -23,7 +27,9 @@ assertSecureProductionStartup('whatsapp', process.env);
 
 const app = express();
 const PORT = Number(process.env.WHATSAPP_PORT ?? process.env.PORT ?? 3100);
-const HOST = '0.0.0.0';
+const isProductionBuild = (process.argv[1] || '').endsWith('whatsapp-server.mjs');
+const HOST = resolveListenHost(process.env, isProductionBuild);
+warnIfProductionBuildWithoutProductionEnv('whatsapp', process.env, isProductionBuild);
 const MAX_MESSAGE_LENGTH = 1000;
 
 const repository = await createRepositoryFromEnv(process.env);

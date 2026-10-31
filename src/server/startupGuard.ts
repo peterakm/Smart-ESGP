@@ -20,6 +20,26 @@ export const findBlockingSecurityChecks = (service: SmartEsgpServiceName, env: N
  );
 };
 
+// Outside production, listen on loopback only so the service is not reachable
+// from the local network. Containers need 0.0.0.0, and SMART_ESGP_HOST overrides.
+export const resolveListenHost = (env: NodeJS.ProcessEnv, isProductionBuild: boolean) => {
+ return env.SMART_ESGP_HOST?.trim() || (isProductionBuild || isProductionDeployment(env) ? '0.0.0.0' : '127.0.0.1');
+};
+
+// The bundled dist/*.mjs entry is the production build, but the checks above
+// only run when the env says production, so make that gap loud.
+export const warnIfProductionBuildWithoutProductionEnv = (
+ service: SmartEsgpServiceName,
+ env: NodeJS.ProcessEnv,
+ isProductionBuild: boolean
+) => {
+ if (!isProductionBuild || isProductionDeployment(env)) return;
+
+ console.warn(
+ `[${service}] Running the production build without NODE_ENV=production or SMART_ESGP_DEPLOYMENT_ENV=production; production security checks are NOT enforced.`
+ );
+};
+
 export const assertSecureProductionStartup = (service: SmartEsgpServiceName, env: NodeJS.ProcessEnv) => {
  const blocking = findBlockingSecurityChecks(service, env);
  if (blocking.length === 0) return;

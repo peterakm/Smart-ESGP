@@ -160,9 +160,27 @@ export const createAuthConfig = (env: NodeJS.ProcessEnv): SmartEsgpAuthConfig =>
  };
 };
 
+const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+const FORWARDING_HEADERS = ['x-forwarded-for', 'x-forwarded-host', 'x-real-ip', 'forwarded', 'cf-connecting-ip'];
+
+// With no tokens configured the API is an open local demo. Tunnels and proxies
+// (cloudflared, ngrok, load balancers) connect from loopback too but add
+// forwarding headers, so those requests could come from anyone on the internet.
+export const isDirectLocalRequest = (req: express.Request) => {
+ return LOOPBACK_ADDRESSES.has(req.socket.remoteAddress || '')
+ && !FORWARDING_HEADERS.some((header) => req.header(header));
+};
+
 export const requireRole = (config: SmartEsgpAuthConfig, minimumRole: SmartEsgpRole): express.RequestHandler => {
  return async (req: SmartEsgpRequest, res, next) => {
  if (!config.requireAuth) {
+ if (!isDirectLocalRequest(req)) {
+ res.status(401).json({
+ error: 'Authentication required. Set SMART_ESGP_AUDITOR_TOKEN (or SMART_ESGP_REQUIRE_AUTH=true) before exposing this service.',
+ });
+ return;
+ }
+
  req.smartEsgpRole = 'auditor';
  next();
  return;

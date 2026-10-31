@@ -9,7 +9,7 @@ import {
   reverseVerifiedEvidenceContribution,
   verificationStatusForReview,
 } from './src/services/evidenceCorrection';
-import { createAuthConfig, requireRole, type SmartEsgpRequest } from './src/server/auth';
+import { createAuthConfig, isDirectLocalRequest, requireRole, type SmartEsgpRequest } from './src/server/auth';
 import { buildCertificateVerificationResult, createCertificateRecord } from './src/server/certificateRegistry';
 import { createEvidenceMediaAccess, openLocalEvidenceMedia } from './src/server/evidenceMediaAccess';
 import { asyncRoute, createApiErrorHandler } from './src/server/httpErrorHandling';
@@ -25,7 +25,11 @@ import { applyRequestContext } from './src/server/requestContext';
 import { createRuntimeReadinessWithRepository } from './src/server/runtimeReadiness';
 import { applySecurityBaseline } from './src/server/securityMiddleware';
 import { startHttpService } from './src/server/serviceLifecycle';
-import { assertSecureProductionStartup } from './src/server/startupGuard';
+import {
+  assertSecureProductionStartup,
+  resolveListenHost,
+  warnIfProductionBuildWithoutProductionEnv,
+} from './src/server/startupGuard';
 import { createSystemAuditEvent, maskPhoneNumber } from './src/server/systemAudit';
 import { resolveWhatsAppRawPayloadRetention } from './src/server/whatsappRawPayloadRetention';
 import { createWhatsAppRouter } from './src/server/whatsappRoutes';
@@ -36,8 +40,9 @@ assertSecureProductionStartup('dashboard', process.env);
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 3000);
-const HOST = '0.0.0.0';
 const isProduction = process.env.NODE_ENV === 'production' || path.basename(process.argv[1] || '') === 'server.mjs';
+const HOST = resolveListenHost(process.env, isProduction);
+warnIfProductionBuildWithoutProductionEnv('dashboard', process.env, isProduction);
 const MAX_MESSAGE_LENGTH = 1000;
 const MAX_HISTORY_ITEMS = 10;
 const dashboardWebhookRoutesEnabled =
@@ -232,7 +237,7 @@ if (process.env.SMART_ESGP_ENABLE_TEST_ERROR_ROUTE === 'true') {
 app.get('/api/auth/status', (req: SmartEsgpRequest, res) => {
   res.json({
     requireAuth: authConfig.requireAuth,
-    role: req.smartEsgpRole || (authConfig.requireAuth ? undefined : 'auditor'),
+    role: req.smartEsgpRole || (!authConfig.requireAuth && isDirectLocalRequest(req) ? 'auditor' : undefined),
   });
 });
 
