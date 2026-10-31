@@ -11,12 +11,20 @@ const roleRank: Record<SmartEsgpRole, number> = {
  auditor: 3,
 };
 
+export interface SmartEsgpApiUser {
+ name: string;
+ role: SmartEsgpRole;
+ token: string;
+}
+
 export interface SmartEsgpAuthConfig {
  requireAuth: boolean;
  viewerToken?: string;
  dealerToken?: string;
  auditorToken?: string;
+ users?: SmartEsgpApiUser[];
  whatsappAppSecret?: string;
+ allowUnsignedWebhooks?: boolean;
  oidc?: SmartEsgpOidcConfig;
 }
 
@@ -45,19 +53,78 @@ const readBearerToken = (req: express.Request) => {
  return req.header('x-smart-esgp-token') || undefined;
 };
 
-const timingSafeEqual = (left: string, right: string) => {
- const leftBuffer = Buffer.from(left);
- const rightBuffer = Buffer.from(right);
+// Hashing first gives both sides the same length, so the comparison time does
+// not reveal how long the secret is.
+export const timingSafeEqual = (left: string, right: string) => {
+ const leftDigest = crypto.createHash('sha256').update(left).digest();
+ const rightDigest = crypto.createHash('sha256').update(right).digest();
 
- return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+ return crypto.timingSafeEqual(leftDigest, rightDigest);
 };
 
-const resolveRoleForToken = (token: string | undefined, config: SmartEsgpAuthConfig): SmartEsgpRole | undefined => {
- if (!token) return undefined;
- if (config.auditorToken && timingSafeEqual(token, config.auditorToken)) return 'auditor';
- if (config.dealerToken && timingSafeEqual(token, config.dealerToken)) return 'dealer';
- if (config.viewerToken && timingSafeEqual(token, config.viewerToken)) return 'viewer';
- return undefined;
+const API_USER_NAME = /^[a-zA-Z0-9._@-]{1,64}$/;
+const isRole = (value: string): value is SmartEsgpRole => value === 'viewer' || value === 'dealer' || value === 'auditor';
+
+// SMART_ESGP_API_USERS gives each person their own token so audit events name
+// who acted: "name:role:token" entries separated by commas.
+export const parseApiUsers = (value: string | undefined): SmartEsgpApiUser[] => {
+ if (!value?.trim()) return [];
+
+ return value.split(',').map((entry) => {
+ const [name = '', role = '', ...tokenParts] = entry.trim().split(':');
+ const token = tokenParts.join(':');
+
+ if (!API_USER_NAME.test(name) || !isRole(role) || token.length < 16) {
+ throw new Error(
+ `SMART_ESGP_API_USERS entry "${name || entry.trim().slice(0, 20)}" must be name:role:token with role viewer, dealer or auditor and a token of at least 16 characters.`
+ );
+ }
+
+ return { name, role, token };
+ });
+};
+
+const resolveRoleForToken = (
+ token: string | undefined,
+ config: SmartEsgpAuthConfig
+): { role?: SmartEsgpRole; actorId?: string } => {
+ if (!token) return {};
+
+ const user = config.users?.find((candidate) => timingSafeEqual(token, candidate.token));
+ if (user) return { role: user.role, actorId: user.name };
+
+ if (config.auditorToken && timingSafeEqual(token, config.auditorToken)) return { role: 'auditor' };
+ if (config.dealerToken && timingSafeEqual(token, config.dealerToken)) return { role: 'dealer' };
+ if (config.viewerToken && timingSafeEqual(token, config.viewerToken)) return { role: 'viewer' };
+ return {};
+};
+
+const AUTH_FAILURE_WINDOW_MS = 60_000;
+const authFailures = new Map<string, { count: number; resetAt: number }>();
+
+// Only wrong tokens count: a dashboard with no token yet polls and gets 401s,
+// and that must keep showing the token prompt rather than a lockout.
+const authFailureLimit = () => {
+ const parsed = Number.parseInt(process.env.SMART_ESGP_AUTH_FAILURE_LIMIT_PER_MINUTE || '', 10);
+ return Number.isFinite(parsed) && parsed > 0 ? parsed : 20;
+};
+
+const isAuthFailureLimited = (key: string, now: number) => {
+ const entry = authFailures.get(key);
+ return !!entry && entry.resetAt > now && entry.count >= authFailureLimit();
+};
+
+const recordAuthFailure = (key: string, now: number) => {
+ const entry = authFailures.get(key);
+ const bucket = !entry || entry.resetAt <= now ? { count: 0, resetAt: now + AUTH_FAILURE_WINDOW_MS } : entry;
+ bucket.count += 1;
+ authFailures.set(key, bucket);
+
+ if (authFailures.size > 10_000) {
+ for (const [bucketKey, value] of authFailures.entries()) {
+ if (value.resetAt <= now) authFailures.delete(bucketKey);
+ }
+ }
 };
 
 const hasValue = (value: string | undefined) => {
@@ -147,7 +214,8 @@ export const createAuthConfig = (env: NodeJS.ProcessEnv): SmartEsgpAuthConfig =>
  const viewerToken = env.SMART_ESGP_VIEWER_TOKEN || env.FELDA_VIEWER_TOKEN;
  const dealerToken = env.SMART_ESGP_DEALER_TOKEN || env.FELDA_DEALER_TOKEN;
  const auditorToken = env.SMART_ESGP_AUDITOR_TOKEN || env.FELDA_AUDITOR_TOKEN || env.FELDA_API_TOKEN;
- const anyTokenConfigured = !!viewerToken || !!dealerToken || !!auditorToken;
+ const users = parseApiUsers(env.SMART_ESGP_API_USERS);
+ const anyTokenConfigured = !!viewerToken || !!dealerToken || !!auditorToken || users.length > 0;
  const oidc = createOidcConfig(env);
 
  return {
@@ -155,7 +223,9 @@ export const createAuthConfig = (env: NodeJS.ProcessEnv): SmartEsgpAuthConfig =>
  viewerToken,
  dealerToken,
  auditorToken,
+ users,
  whatsappAppSecret: env.WHATSAPP_APP_SECRET,
+ allowUnsignedWebhooks: env.SMART_ESGP_ALLOW_UNSIGNED_WHATSAPP_WEBHOOKS === 'true',
  oidc,
  };
 };
@@ -187,9 +257,15 @@ export const requireRole = (config: SmartEsgpAuthConfig, minimumRole: SmartEsgpR
  }
 
  const token = readBearerToken(req);
- const role = resolveRoleForToken(token, config);
- let resolvedRole = role;
- let actorId: string | undefined;
+ const failureKey = req.ip || req.socket.remoteAddress || 'unknown';
+ const now = Date.now();
+
+ if (token && isAuthFailureLimited(failureKey, now)) {
+ res.status(429).json({ error: 'Too many failed sign-in attempts. Please wait a minute and try again.' });
+ return;
+ }
+
+ let { role: resolvedRole, actorId } = resolveRoleForToken(token, config);
 
  if (!resolvedRole && config.oidc) {
  try {
@@ -197,12 +273,14 @@ export const requireRole = (config: SmartEsgpAuthConfig, minimumRole: SmartEsgpR
  resolvedRole = oidcResult.role;
  actorId = oidcResult.actorId;
  } catch {
+ if (token) recordAuthFailure(failureKey, now);
  res.status(401).json({ error: 'Authentication required.' });
  return;
  }
  }
 
  if (!resolvedRole) {
+ if (token) recordAuthFailure(failureKey, now);
  res.status(401).json({ error: 'Authentication required.' });
  return;
  }
@@ -221,7 +299,14 @@ export const requireRole = (config: SmartEsgpAuthConfig, minimumRole: SmartEsgpR
 export const verifyWhatsAppSignature = (config: SmartEsgpAuthConfig): express.RequestHandler => {
  return (req: SmartEsgpRequest, res, next) => {
  if (!config.whatsappAppSecret) {
+ // Without the app secret a forged webhook cannot be told apart from Meta's,
+ // so only accept unsigned ones from a local simulator unless explicitly allowed.
+ if (config.allowUnsignedWebhooks || isDirectLocalRequest(req)) {
  next();
+ return;
+ }
+
+ res.status(401).json({ error: 'WHATSAPP_APP_SECRET must be configured to accept webhooks from outside this machine.' });
  return;
  }
 

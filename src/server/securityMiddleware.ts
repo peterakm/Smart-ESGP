@@ -36,12 +36,34 @@ const buildHttpsRedirectUrl = (req: express.Request) => {
  return host ? `https://${host}${req.originalUrl}` : undefined;
 };
 
+// Inline styles stay allowed: React style props and the certificate print
+// stylesheet rely on them. The Vite dev server additionally needs inline
+// scripts (React refresh preamble) and its local websocket.
+export const buildContentSecurityPolicy = (options: { devServer?: boolean } = {}) => [
+ "default-src 'self'",
+ `script-src 'self'${options.devServer ? " 'unsafe-inline'" : ''}`,
+ "style-src 'self' 'unsafe-inline'",
+ "img-src 'self' data: blob:",
+ "font-src 'self' data:",
+ `connect-src 'self'${options.devServer ? ' ws://localhost:*' : ''}`,
+ "media-src 'self' blob:",
+ "object-src 'none'",
+ "base-uri 'self'",
+ "form-action 'self'",
+ "frame-ancestors 'none'",
+].join('; ');
+
 export const resolveAllowedCorsOrigins = (env: NodeJS.ProcessEnv) => {
  return splitCsv(env.SMART_ESGP_ALLOWED_ORIGINS);
 };
 
-export const applySecurityBaseline = (app: express.Express, env: NodeJS.ProcessEnv) => {
+export const applySecurityBaseline = (
+ app: express.Express,
+ env: NodeJS.ProcessEnv,
+ options: { devServer?: boolean } = {}
+) => {
  app.disable('x-powered-by');
+ const contentSecurityPolicy = buildContentSecurityPolicy(options);
 
  const trustProxy = env.SMART_ESGP_TRUST_PROXY === 'true';
  const forceHttps = env.SMART_ESGP_FORCE_HTTPS === 'true';
@@ -72,6 +94,7 @@ export const applySecurityBaseline = (app: express.Express, env: NodeJS.ProcessE
  res.setHeader('referrer-policy', 'no-referrer');
  res.setHeader('x-frame-options', 'DENY');
  res.setHeader('permissions-policy', 'camera=(), microphone=()');
+ res.setHeader('content-security-policy', contentSecurityPolicy);
 
  if (isHttps || forceHttps) {
  res.setHeader('strict-transport-security', `max-age=${hstsMaxAgeSeconds}; includeSubDomains`);

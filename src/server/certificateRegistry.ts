@@ -69,6 +69,11 @@ export interface CertificateVerificationResult {
  reason?: string;
 }
 
+const maskLicence = (licence: string) => {
+ const visible = licence.slice(-3);
+ return licence.length > 3 ? `${'*'.repeat(Math.min(licence.length - 3, 6))}${visible}` : licence;
+};
+
 export const buildCertificateVerificationResult = (
  certificate: CertificateRecord | undefined,
  farmer: Farmer | undefined,
@@ -102,7 +107,9 @@ export const buildCertificateVerificationResult = (
  farmer: farmer
  ? {
  name: farmer.name,
- mpobLicence: farmer.mpobLicence,
+ // Public endpoint: enough to match a licence the buyer already holds,
+ // without publishing every certified farmer's full licence number.
+ mpobLicence: maskLicence(farmer.mpobLicence),
  plotLocation: farmer.plotLocation,
  plotArea: farmer.plotArea,
  post2020Status: farmer.post2020Status,

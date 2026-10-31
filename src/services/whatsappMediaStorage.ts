@@ -63,6 +63,10 @@ const asNumber = (value: unknown) => {
  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 };
 
+// WhatsApp caps audio at 16 MB and images at 5 MB; anything larger is not a
+// genuine evidence upload and should not be held in memory or stored.
+const MAX_MEDIA_BYTES = 16 * 1024 * 1024;
+
 const safeSegment = (value: string) => {
  return value.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 120) || 'unknown';
 };
@@ -181,8 +185,18 @@ export const downloadWhatsAppMedia = async (
  throw new Error(`Failed to download WhatsApp media: ${await responseErrorText(response)}`);
  }
 
+ const declaredBytes = Number(response.headers.get('content-length'));
+ if (Number.isFinite(declaredBytes) && declaredBytes > MAX_MEDIA_BYTES) {
+ throw new Error(`WhatsApp media is ${declaredBytes} bytes, above the ${MAX_MEDIA_BYTES} byte limit.`);
+ }
+
+ const buffer = Buffer.from(await response.arrayBuffer());
+ if (buffer.length > MAX_MEDIA_BYTES) {
+ throw new Error(`WhatsApp media is ${buffer.length} bytes, above the ${MAX_MEDIA_BYTES} byte limit.`);
+ }
+
  return {
- buffer: Buffer.from(await response.arrayBuffer()),
+ buffer,
  contentType: response.headers.get('content-type') || undefined,
  };
 };

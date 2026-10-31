@@ -4,7 +4,7 @@ import { processWhatsAppWebhook } from '../services/whatsappWebhookProcessor';
 import { sendWhatsAppTextMessage, type WhatsAppCloudApiConfig } from '../services/whatsappCloudApi';
 import type { WhatsAppMediaStorageConfig } from '../services/whatsappMediaStorage';
 import { normalizeWhatsAppPhoneNumber } from '../services/whatsappPhone';
-import { requireRole, verifyWhatsAppSignature, type SmartEsgpAuthConfig, type SmartEsgpRequest } from './auth';
+import { requireRole, timingSafeEqual, verifyWhatsAppSignature, type SmartEsgpAuthConfig, type SmartEsgpRequest } from './auth';
 import { asyncRoute } from './httpErrorHandling';
 import { parseListLimit } from './queryLimits';
 import type { SmartEsgpRepository } from './smartEsgpRepository';
@@ -69,7 +69,7 @@ export const createWhatsAppRouter = (options: WhatsAppRoutesOptions) => {
  return res.status(500).send('WHATSAPP_VERIFY_TOKEN is not configured.');
  }
 
- if (mode === 'subscribe' && token === options.verifyToken && typeof challenge === 'string') {
+ if (mode === 'subscribe' && typeof token === 'string' && timingSafeEqual(token, options.verifyToken) && typeof challenge === 'string') {
  return res.status(200).send(challenge);
  }
 
