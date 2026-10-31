@@ -20,6 +20,23 @@ export default defineConfig(() => {
       watch: process.env.DISABLE_HMR === 'true' ? null : {
         ignored: ['**/output/**', '**/dist/**', '**/.smart-esgp-data/**'],
       },
+      fs: {
+        // The dev server serves any file under the project root, so farmer data,
+        // evidence photos and server-only code must be denied explicitly.
+        // Setting deny replaces Vite's defaults, so those are repeated first.
+        deny: [
+          '.env',
+          '.env.*',
+          '*.{crt,pem}',
+          '**/.git/**',
+          '**/.smart-esgp-data/**',
+          '**/.smart-esgp-media/**',
+          '**/src/server/**',
+          '**/db/**',
+          'server.ts',
+          'whatsapp-server.ts',
+        ],
+      },
     },
   };
 });
