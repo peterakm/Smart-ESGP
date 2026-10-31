@@ -27,6 +27,7 @@
     "smoke:file-retention": "tsx scripts/smoke-file-repository-retention.ts",
     "smoke:graceful-shutdown": "node scripts/smoke-graceful-shutdown.mjs",
     "smoke:farmer-feedback": "node scripts/smoke-farmer-feedback.mjs",
+    "smoke:farmer-review-notifications": "node scripts/smoke-farmer-review-notifications.mjs",
     "smoke:geofence": "tsx scripts/smoke-geofence.ts",
     "smoke:list-limits": "node scripts/smoke-list-limits.mjs",
     "smoke:media": "tsx scripts/smoke-media-storage.ts",
