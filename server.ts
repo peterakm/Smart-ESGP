@@ -15,6 +15,8 @@ import { createEvidenceMediaAccess, openLocalEvidenceMedia } from './src/server/
 import { asyncRoute, createApiErrorHandler } from './src/server/httpErrorHandling';
 import { createFixedWindowRateLimiter, rateLimitFromEnv } from './src/server/rateLimiter';
 import { createWhatsAppCloudApiConfig, sendWhatsAppTextMessage } from './src/services/whatsappCloudApi';
+import { buildCertificateIssuedNotice, buildEvidenceReviewNotice } from './src/services/farmerFeedback';
+import type { WhatsAppSendResult } from './src/contracts/whatsapp';
 import { createWhatsAppMediaStorageConfig } from './src/services/whatsappMediaStorage';
 import { createSmartEsgpJson } from './src/server/jsonMiddleware';
 import { createRepositoryFromEnv } from './src/server/repositoryFactory';
@@ -413,6 +415,31 @@ app.get('/api/audit/events', requireRole(authConfig, 'viewer'), asyncRoute(async
   });
 }));
 
+// Messages the farmer about a dashboard decision on their record. Only sends to
+// a WhatsApp session still linked to this farmer, so a notice never reaches a
+// phone that has since been unlinked or transferred to someone else.
+const notifyLinkedFarmer = async (
+  farmer: Farmer,
+  preferredPhone: string | undefined,
+  buildText: (language: 'BM' | 'EN') => string | undefined
+): Promise<{ mode: WhatsAppSendResult['mode'] | 'skipped' }> => {
+  const preferredSession = preferredPhone ? await repository.getWhatsAppSession(preferredPhone) : undefined;
+  const session = preferredSession?.farmerId === farmer.id
+    ? preferredSession
+    : (await repository.listWhatsAppSessions()).find((candidate) => candidate.farmerId === farmer.id);
+
+  if (!session) return { mode: 'skipped' };
+
+  const text = buildText(session.language || farmer.whatsappLanguage || 'BM');
+  if (!text) return { mode: 'skipped' };
+
+  const result = await sendWhatsAppTextMessage(whatsappCloudApiConfig, {
+    toPhone: session.phoneNumber,
+    text,
+  });
+  return { mode: result.mode };
+};
+
 app.patch('/api/evidence/:evidenceId/review', requireRole(authConfig, 'auditor'), asyncRoute(async (req: SmartEsgpRequest, res) => {
   if (!req.body || typeof req.body !== 'object') {
     return res.status(400).json({ error: 'Request body must be a review decision object.' });
@@ -468,6 +495,21 @@ app.patch('/api/evidence/:evidenceId/review', requireRole(authConfig, 'auditor')
       });
     }
   }
+
+  // Re-saving the same decision (e.g. editing notes) shouldn't re-message the farmer.
+  const decisionChanged = existingRecord.review?.status !== decision;
+  const reviewedFarmer = farmer;
+  const farmerNotified = reviewedFarmer && decisionChanged
+    ? await notifyLinkedFarmer(reviewedFarmer, evidence.phoneNumber, (language) => buildEvidenceReviewNotice({
+        farmer: reviewedFarmer,
+        evidence,
+        decision,
+        language,
+        notes: review.notes,
+        certificateSuspended: !!suspendedCertificate,
+      }))
+    : { mode: 'skipped' as const };
+
   await repository.recordSystemAuditEvents([
     createSystemAuditEvent({
       service: serviceName,
@@ -484,6 +526,7 @@ app.patch('/api/evidence/:evidenceId/review', requireRole(authConfig, 'auditor')
         reviewedBy,
         appliedToCompliance: shouldApplyApprovedEvidence,
         correctedPriorApproval: shouldReverseApprovedEvidence,
+        farmerNotifiedMode: farmerNotified.mode,
       },
     }),
     ...(farmer && (shouldApplyApprovedEvidence || shouldReverseApprovedEvidence)
@@ -531,6 +574,7 @@ app.patch('/api/evidence/:evidenceId/review', requireRole(authConfig, 'auditor')
     evidence,
     farmer,
     suspendedCertificate,
+    farmerNotified,
   });
 }));
 
@@ -699,6 +743,10 @@ app.post('/api/certificates/issue', requireRole(authConfig, 'auditor'), asyncRou
     ],
   });
 
+  const farmerNotified = await notifyLinkedFarmer(updatedFarmer, undefined, (language) =>
+    buildCertificateIssuedNotice(updatedFarmer, certificate, language)
+  );
+
   await repository.recordSystemAuditEvents([
     createSystemAuditEvent({
       service: serviceName,
@@ -714,6 +762,7 @@ app.post('/api/certificates/issue', requireRole(authConfig, 'auditor'), asyncRou
         certificateNumber: certificate.certificateNumber,
         verificationHash: certificate.verificationHash.slice(0, 16),
         issuedBy,
+        farmerNotifiedMode: farmerNotified.mode,
       },
     }),
   ]);
@@ -723,6 +772,7 @@ app.post('/api/certificates/issue', requireRole(authConfig, 'auditor'), asyncRou
     farmer: updatedFarmer,
     evaluation,
     reused: false,
+    farmerNotified,
   });
 }));
 
