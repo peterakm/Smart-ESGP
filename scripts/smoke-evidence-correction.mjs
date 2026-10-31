@@ -1,11 +1,15 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const port = 3089;
 const auditorToken = 'auditor-secret';
 const phone = '60126660123';
 const base = `http://localhost:${port}`;
 
-const child = spawn(process.execPath, ['dist/server.mjs'], {
+const dataFile = `.smart-esgp-data/evidence-correction-smoke-${Date.now()}.json`;
+
+const startServer = () => spawn(process.execPath, ['dist/server.mjs'], {
   cwd: process.cwd(),
   env: {
     ...process.env,
@@ -15,10 +19,12 @@ const child = spawn(process.execPath, ['dist/server.mjs'], {
     SMART_ESGP_AUDITOR_TOKEN: auditorToken,
     WHATSAPP_ACCESS_TOKEN: '',
     WHATSAPP_PHONE_NUMBER_ID: '',
-    SMART_ESGP_DATA_FILE: `.smart-esgp-data/evidence-correction-smoke-${Date.now()}.json`,
+    SMART_ESGP_DATA_FILE: dataFile,
   },
   stdio: 'ignore',
 });
+
+let child = startServer();
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -107,14 +113,20 @@ try {
     },
   };
 
-  const updateResponse = await fetch(`${base}/api/farmers/f-3`, {
-    method: 'PUT',
-    headers: jsonAuthHeaders,
-    body: JSON.stringify(thresholdFarmer),
-  });
-  if (updateResponse.status !== 200) {
-    throw new Error(`Farmer threshold setup failed with ${updateResponse.status}`);
-  }
+  // Compliance fields cannot be set through the API, so seed the 89-day
+  // threshold state straight into the data file and restart on it.
+  const farmers = (await (await fetch(`${base}/api/farmers`, { headers: authHeaders })).json()).farmers;
+  child.kill();
+  await new Promise((resolve) => child.once('exit', resolve));
+  fs.mkdirSync(path.dirname(dataFile), { recursive: true });
+  fs.writeFileSync(dataFile, JSON.stringify({
+    version: 1,
+    savedAt: new Date().toISOString(),
+    farmers: farmers.map((candidate) => (candidate.id === thresholdFarmer.id ? thresholdFarmer : candidate)),
+    whatsappWebhookEvents: [],
+  }));
+  child = startServer();
+  await waitForServer();
 
   await postWebhook({
     from: phone,

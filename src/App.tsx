@@ -1,9 +1,8 @@
 import { useState, useMemo, lazy, Suspense, useEffect } from 'react';
 import { initialFarmers, SAMPLE_DATA_AS_OF } from './data/mockFarmers';
-import { CertificateRecord, ConsentRecord, EvidenceRecord, Farmer, FarmerStatus, SystemAuditEvent } from './types';
+import { CertificateRecord, ConsentRecord, EvidenceRecord, Farmer, SystemAuditEvent } from './types';
 import type { WhatsAppFarmerSession, WhatsAppMonitoringEvent, WhatsAppProviderMessageClaim } from './contracts/whatsapp';
 import type { ComplianceEvaluation } from './services/complianceEngine';
-import { getStableCertificateId } from './utils/certificates';
 import { apiFetch } from './api/client';
 import {
  ICON,
@@ -696,65 +695,41 @@ export default function App() {
  void persistFarmerUpdate(updatedFarmer);
  };
 
- // Auditor action: Clear flag (justification is captured in the confirmation step)
- const handleClearFlag = (farmerId: string, justification?: string) => {
- const farmer = farmers.find((f) => f.id === farmerId);
- if (!farmer) return;
+ // Auditor review actions run on the server, which decides the resulting status
+ // from verified evidence and records the signed-in auditor and the reason.
+ const runFarmerReviewAction = async (
+ farmerId: string,
+ action: 'clear_flag' | 'rule_exception',
+ justification?: string
+ ) => {
+ try {
+ const response = await apiFetch(`/api/farmers/${encodeURIComponent(farmerId)}/review-actions`, {
+ method: 'POST',
+ headers: { 'Content-Type': 'application/json' },
+ body: JSON.stringify({ action, justification: justification?.trim() }),
+ });
 
- const clearedJustification = justification?.trim();
+ if (!response.ok) {
+ throw new Error(`Review action API returned ${response.status}`);
+ }
 
- const isEligibleForCert = farmer.daysCollected >= 90;
- const nextStatus = isEligibleForCert ? FarmerStatus.CERTIFIED : FarmerStatus.IN_PROGRESS;
- const updatedFarmer: Farmer = {
- ...farmer,
- status: nextStatus,
- score: Math.max(78, farmer.score + 10), // Boost score back above threshold
- mspoCertId: farmer.mspoCertId === 'UNASSIGNED' || farmer.mspoCertId.startsWith('PENDING')
- ? getStableCertificateId(farmer)
- : farmer.mspoCertId,
- anomalies: [],
- auditLogs: [
- {
- timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
- action: 'Flag cleared',
- user: 'MPOCC lead auditor',
- details: clearedJustification
- ? `Flag cleared after auditor review. Justification: ${clearedJustification}`
- : 'Flag cleared after auditor review. No justification was recorded.',
- },
- ...farmer.auditLogs,
- ],
+ const data = (await response.json()) as FarmerApiResponse;
+ if (data.farmer) {
+ applyFarmerToState(data.farmer);
+ }
+ } catch (error) {
+ console.warn('Farmer review action failed:', error);
+ }
  };
 
- handleFarmerUpdate(updatedFarmer);
+ // Auditor action: Clear flag (justification is captured in the confirmation step)
+ const handleClearFlag = (farmerId: string, justification?: string) => {
+ void runFarmerReviewAction(farmerId, 'clear_flag', justification);
  };
 
  // Auditor action: apply a rule exception
  const handleApplyOverride = (farmerId: string, overrideDetails: string) => {
- const farmer = farmers.find((f) => f.id === farmerId);
- if (!farmer) return;
-
- const isEligibleForCert = farmer.daysCollected >= 90;
- const nextStatus = isEligibleForCert ? FarmerStatus.CERTIFIED : FarmerStatus.IN_PROGRESS;
- const updatedFarmer: Farmer = {
- ...farmer,
- status: nextStatus,
- score: Math.max(80, farmer.score + 15),
- mspoCertId: farmer.mspoCertId === 'UNASSIGNED' || farmer.mspoCertId.startsWith('PENDING')
- ? getStableCertificateId(farmer)
- : farmer.mspoCertId,
- auditLogs: [
- {
- timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
- action: 'Rule exception recorded',
- user: 'FELDA senior auditor',
- details: `Rule exception recorded. Reason: ${overrideDetails}`,
- },
- ...farmer.auditLogs,
- ],
- };
-
- handleFarmerUpdate(updatedFarmer);
+ void runFarmerReviewAction(farmerId, 'rule_exception', overrideDetails);
  };
 
  const handleReviewEvidence = async (

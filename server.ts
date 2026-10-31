@@ -9,7 +9,7 @@ import {
   reverseVerifiedEvidenceContribution,
   verificationStatusForReview,
 } from './src/services/evidenceCorrection';
-import { createAuthConfig, requireRole, type SmartEsgpRequest } from './src/server/auth';
+import { createAuthConfig, isDirectLocalRequest, requireRole, type SmartEsgpRequest } from './src/server/auth';
 import { buildCertificateVerificationResult, createCertificateRecord } from './src/server/certificateRegistry';
 import { createEvidenceMediaAccess, openLocalEvidenceMedia } from './src/server/evidenceMediaAccess';
 import { asyncRoute, createApiErrorHandler } from './src/server/httpErrorHandling';
@@ -25,10 +25,15 @@ import { applyRequestContext } from './src/server/requestContext';
 import { createRuntimeReadinessWithRepository } from './src/server/runtimeReadiness';
 import { applySecurityBaseline } from './src/server/securityMiddleware';
 import { startHttpService } from './src/server/serviceLifecycle';
-import { assertSecureProductionStartup } from './src/server/startupGuard';
+import {
+  assertSecureProductionStartup,
+  resolveListenHost,
+  warnIfProductionBuildWithoutProductionEnv,
+} from './src/server/startupGuard';
 import { createSystemAuditEvent, maskPhoneNumber } from './src/server/systemAudit';
 import { resolveWhatsAppRawPayloadRetention } from './src/server/whatsappRawPayloadRetention';
 import { createWhatsAppRouter } from './src/server/whatsappRoutes';
+import { getStableCertificateId } from './src/utils/certificates';
 
 loadEnv({ path: '.env.local' });
 loadEnv();
@@ -36,8 +41,9 @@ assertSecureProductionStartup('dashboard', process.env);
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 3000);
-const HOST = '0.0.0.0';
 const isProduction = process.env.NODE_ENV === 'production' || path.basename(process.argv[1] || '') === 'server.mjs';
+const HOST = resolveListenHost(process.env, isProduction);
+warnIfProductionBuildWithoutProductionEnv('dashboard', process.env, isProduction);
 const MAX_MESSAGE_LENGTH = 1000;
 const MAX_HISTORY_ITEMS = 10;
 const dashboardWebhookRoutesEnabled =
@@ -84,7 +90,7 @@ const whatsappManualSendRateLimit = createFixedWindowRateLimiter({
 });
 
 applyRequestContext(app, process.env, serviceName);
-applySecurityBaseline(app, process.env);
+applySecurityBaseline(app, process.env, { devServer: !isProduction });
 app.use(createSmartEsgpJson(process.env, serviceName));
 
 const isValidSender = (sender: unknown): sender is ChatHistoryItem['sender'] => {
@@ -136,20 +142,41 @@ const validateChatRequest = (body: unknown): { value?: ChatRequest; error?: stri
   };
 };
 
+const CERTIFICATION_EVIDENCE_DAYS = 90;
+const PROTECTED_FARMER_FIELDS = [
+  'status',
+  'score',
+  'daysCollected',
+  'mspoCertId',
+  'mpobLicence',
+  'post2020Status',
+  'whispStatus',
+  'pdpaConsent',
+  'anomalies',
+  'auditLogs',
+  'evidenceSummary',
+] as const satisfies readonly (keyof Farmer)[];
+type ProtectedFarmerField = typeof PROTECTED_FARMER_FIELDS[number];
+
 // Audit attribution must come from the authenticated identity; names supplied in
 // the request body (reviewedBy, issuedBy) are display labels only.
 const auditActorId = (req: SmartEsgpRequest) => req.smartEsgpActorId || req.smartEsgpRole || 'felda-api';
 
 const firstName = (name: string) => name.split(' ')[0] || 'Tani';
 
+// Record fields go into the system prompt, so strip line breaks and cap length
+// to stop a crafted name or licence from adding its own instructions.
+const promptField = (value: unknown, maxLength = 80) =>
+  String(value ?? '').replace(/[\r\n\t`]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+
 const buildSystemPrompt = (farmer: Farmer) => {
   const language = farmer.whatsappLanguage || 'BM';
 
   return `You are the Smart-ESGP AI Compliance Officer, a warm, supportive, and practical digital auditor assisting independent oil palm smallholders in Malaysia.
-The farmer you are chatting with is: ${farmer.name}.
-Current MSPO Compliance Score: ${farmer.score}/100.
-Status: ${farmer.status}.
-MPOB Licence: ${farmer.mpobLicence || 'Not linked'}.
+The farmer you are chatting with is: ${promptField(farmer.name)}.
+Current MSPO Compliance Score: ${Number(farmer.score) || 0}/100.
+Status: ${promptField(farmer.status, 40)}.
+MPOB Licence: ${promptField(farmer.mpobLicence, 20) || 'Not linked'}.
 Primary Language: ${language}. Reply primarily in this language.
 
 Guidelines:
@@ -232,7 +259,7 @@ if (process.env.SMART_ESGP_ENABLE_TEST_ERROR_ROUTE === 'true') {
 app.get('/api/auth/status', (req: SmartEsgpRequest, res) => {
   res.json({
     requireAuth: authConfig.requireAuth,
-    role: req.smartEsgpRole || (authConfig.requireAuth ? undefined : 'auditor'),
+    role: req.smartEsgpRole || (!authConfig.requireAuth && isDirectLocalRequest(req) ? 'auditor' : undefined),
   });
 });
 
@@ -263,11 +290,20 @@ app.put('/api/farmers/:farmerId', requireRole(authConfig, 'auditor'), asyncRoute
     return res.status(400).json({ error: 'Farmer ID in path and body must match.' });
   }
 
-  if (!(await repository.hasFarmer(farmer.id))) {
+  const existingFarmer = await repository.getFarmer(farmer.id);
+  if (!existingFarmer) {
     return res.status(404).json({ error: 'Farmer not found.' });
   }
 
-  const updatedFarmer = await repository.upsertFarmer(farmer);
+  // Compliance state only changes through evidence review, certificate issue or
+  // a justified review action, so a plain update cannot certify a farmer.
+  const protectedFields = Object.fromEntries(
+    PROTECTED_FARMER_FIELDS.map((field) => [field, existingFarmer[field]])
+  ) as Pick<Farmer, ProtectedFarmerField>;
+  const ignoredFields = PROTECTED_FARMER_FIELDS.filter(
+    (field) => field in farmer && JSON.stringify(farmer[field]) !== JSON.stringify(existingFarmer[field])
+  );
+  const updatedFarmer = await repository.upsertFarmer({ ...existingFarmer, ...farmer, ...protectedFields });
   await repository.recordSystemAuditEvents([
     createSystemAuditEvent({
       service: serviceName,
@@ -276,18 +312,89 @@ app.put('/api/farmers/:farmerId', requireRole(authConfig, 'auditor'), asyncRoute
       actorId: auditActorId(req),
       entityType: 'farmer',
       entityId: updatedFarmer.id,
-      severity: 'info',
+      severity: ignoredFields.length ? 'warning' : 'info',
       message: `Farmer ${updatedFarmer.id} was updated through the FELDA dashboard API.`,
       metadata: {
         status: updatedFarmer.status,
         score: updatedFarmer.score,
+        ignoredProtectedFields: ignoredFields.length ? ignoredFields.join(',') : undefined,
       },
     }),
   ]);
 
   return res.json({
     farmer: updatedFarmer,
+    ignoredProtectedFields: ignoredFields,
   });
+}));
+
+// Auditor decisions that change compliance state outside evidence review. They
+// need a written reason, are attributed to the signed-in person, and can only
+// certify a farmer who already has 90 days of verified evidence on the server.
+app.post('/api/farmers/:farmerId/review-actions', requireRole(authConfig, 'auditor'), asyncRoute(async (req: SmartEsgpRequest, res) => {
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
+  const action = body.action;
+  const justification = sanitizeText(body.justification, 500);
+
+  if (action !== 'clear_flag' && action !== 'rule_exception') {
+    return res.status(400).json({ error: 'action must be "clear_flag" or "rule_exception".' });
+  }
+
+  if (justification.length < 5) {
+    return res.status(400).json({ error: 'A justification of at least 5 characters is required.' });
+  }
+
+  const farmer = await repository.getFarmer(req.params.farmerId);
+  if (!farmer) {
+    return res.status(404).json({ error: 'Farmer not found.' });
+  }
+
+  const actor = auditActorId(req);
+  const isEligibleForCert = farmer.daysCollected >= CERTIFICATION_EVIDENCE_DAYS;
+  const isClearFlag = action === 'clear_flag';
+  const updatedFarmer = await repository.upsertFarmer({
+    ...farmer,
+    status: isEligibleForCert ? FarmerStatus.CERTIFIED : FarmerStatus.IN_PROGRESS,
+    score: isClearFlag ? Math.max(78, farmer.score + 10) : Math.max(80, farmer.score + 15),
+    mspoCertId: farmer.mspoCertId === 'UNASSIGNED' || farmer.mspoCertId.startsWith('PENDING')
+      ? getStableCertificateId(farmer)
+      : farmer.mspoCertId,
+    anomalies: isClearFlag ? [] : farmer.anomalies,
+    auditLogs: [
+      {
+        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+        action: isClearFlag ? 'Flag cleared' : 'Rule exception recorded',
+        user: actor,
+        details: isClearFlag
+          ? `Flag cleared after auditor review. Justification: ${justification}`
+          : `Rule exception recorded. Reason: ${justification}`,
+      },
+      ...farmer.auditLogs,
+    ],
+  });
+
+  await repository.recordSystemAuditEvents([
+    createSystemAuditEvent({
+      service: serviceName,
+      action: isClearFlag ? 'farmer.flag_cleared' : 'farmer.rule_exception',
+      actorType: 'auditor',
+      actorId: actor,
+      entityType: 'farmer',
+      entityId: farmer.id,
+      severity: 'warning',
+      message: `Farmer ${farmer.id} ${isClearFlag ? 'flag cleared' : 'rule exception recorded'} by ${actor}.`,
+      metadata: {
+        previousStatus: farmer.status,
+        status: updatedFarmer.status,
+        previousScore: farmer.score,
+        score: updatedFarmer.score,
+        daysCollected: farmer.daysCollected,
+        justification,
+      },
+    }),
+  ]);
+
+  return res.json({ farmer: updatedFarmer });
 }));
 
 app.get('/api/evidence', requireRole(authConfig, 'viewer'), asyncRoute(async (req, res) => {
@@ -347,9 +454,9 @@ app.get('/api/evidence/:evidenceId/media-url', requireRole(authConfig, 'viewer')
       ...access,
     });
   } catch (error) {
-    return res.status(500).json({
-      error: error instanceof Error ? error.message : 'Unable to prepare evidence media access.',
-    });
+    // Storage errors can name buckets or file paths; keep those in the server log.
+    console.error(`[${serviceName}] Evidence media access failed for ${evidence.id}:`, error);
+    return res.status(500).json({ error: 'Unable to prepare evidence media access.' });
   }
 }));
 
@@ -371,9 +478,8 @@ app.get('/api/evidence/:evidenceId/media', requireRole(authConfig, 'viewer'), as
     }
     media.stream.pipe(res);
   } catch (error) {
-    return res.status(404).json({
-      error: error instanceof Error ? error.message : 'Evidence media file was not found.',
-    });
+    console.error(`[${serviceName}] Evidence media read failed for ${evidence.id}:`, error);
+    return res.status(404).json({ error: 'Evidence media file was not found.' });
   }
 }));
 
@@ -448,7 +554,8 @@ app.patch('/api/evidence/:evidenceId/review', requireRole(authConfig, 'auditor')
   const body = req.body as Record<string, unknown>;
   const decision = body.decision;
   const notes = sanitizeText(body.notes, 500);
-  const reviewedBy = sanitizeText(body.reviewedBy, 120) || req.smartEsgpActorId || 'FELDA Evidence Reviewer';
+  // A named sign-in (API user or OIDC) is who acted; the body label is only a fallback.
+  const reviewedBy = req.smartEsgpActorId || sanitizeText(body.reviewedBy, 120) || 'FELDA Evidence Reviewer';
   const existingRecord = await repository.getEvidence(req.params.evidenceId);
 
   if (!isEvidenceReviewDecision(decision)) {
@@ -662,7 +769,7 @@ app.post('/api/certificates/issue', requireRole(authConfig, 'auditor'), asyncRou
 
   const body = req.body as Record<string, unknown>;
   const farmerId = sanitizeText(body.farmerId, 80);
-  const issuedBy = sanitizeText(body.issuedBy, 120) || req.smartEsgpActorId || 'FELDA Certification Officer';
+  const issuedBy = req.smartEsgpActorId || sanitizeText(body.issuedBy, 120) || 'FELDA Certification Officer';
   const farmer = farmerId ? await repository.getFarmer(farmerId) : undefined;
 
   if (!farmer) {
@@ -802,9 +909,9 @@ app.patch('/api/whatsapp/sessions/:phoneNumber/identity-conflict', requireRole(a
     return res.status(400).json({ error: 'decision must be "approve" or "reject".' });
   }
 
-  const reviewedBy = typeof body?.reviewedBy === 'string' && body.reviewedBy.trim()
+  const reviewedBy = req.smartEsgpActorId || (typeof body?.reviewedBy === 'string' && body.reviewedBy.trim()
     ? body.reviewedBy.trim().slice(0, 120)
-    : 'FELDA Dashboard Auditor';
+    : 'FELDA Dashboard Auditor');
   const notes = typeof body?.notes === 'string' ? body.notes.trim().slice(0, 500) : undefined;
 
   const session = await repository.getWhatsAppSession(phoneNumber);

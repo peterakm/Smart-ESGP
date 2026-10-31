@@ -7,6 +7,7 @@ import {
 } from '../services/whatsappCloudApi';
 import { resolveWhatsAppClaimTtlSeconds } from './whatsappClaimLease';
 import { resolveWhatsAppRawPayloadRetention } from './whatsappRawPayloadRetention';
+import { parseApiUsers, type SmartEsgpApiUser } from './auth';
 
 export type SmartEsgpServiceName = 'dashboard' | 'whatsapp';
 export type RuntimeCheckStatus = 'ok' | 'warning' | 'error';
@@ -51,7 +52,16 @@ const hasProductionSecret = (value: string | undefined) => {
  return hasValue(value) && !isPlaceholderSecret(value);
 };
 
+const apiUsersOrEmpty = (env: NodeJS.ProcessEnv): SmartEsgpApiUser[] => {
+ try {
+ return parseApiUsers(env.SMART_ESGP_API_USERS);
+ } catch {
+ return [];
+ }
+};
+
 const authTokenValues = (env: NodeJS.ProcessEnv) => [
+ ...apiUsersOrEmpty(env).map((user) => user.token),
  env.SMART_ESGP_VIEWER_TOKEN,
  env.SMART_ESGP_DEALER_TOKEN,
  env.SMART_ESGP_AUDITOR_TOKEN,
@@ -62,6 +72,7 @@ const authTokenValues = (env: NodeJS.ProcessEnv) => [
 ];
 
 const auditorTokenValues = (env: NodeJS.ProcessEnv) => [
+ ...apiUsersOrEmpty(env).filter((user) => user.role === 'auditor').map((user) => user.token),
  env.SMART_ESGP_AUDITOR_TOKEN,
  env.FELDA_AUDITOR_TOKEN,
  env.FELDA_API_TOKEN,
@@ -227,6 +238,14 @@ const dashboardChecks = (env: NodeJS.ProcessEnv, production: boolean): RuntimeCh
  checks.push(ok('dashboard-auth', 'Dashboard API authentication is enabled with role tokens.'));
  } else {
  checks.push(warning('dashboard-auth', 'Dashboard API authentication is disabled for local development.'));
+ }
+
+ if (hasValue(env.SMART_ESGP_API_USERS) && apiUsersOrEmpty(env).length === 0) {
+ checks.push(error('api-users', 'SMART_ESGP_API_USERS is malformed; use name:role:token entries separated by commas.'));
+ } else if (apiUsersOrEmpty(env).length > 0) {
+ checks.push(ok('api-users', `${apiUsersOrEmpty(env).length} named API user(s) configured; audit events record who acted.`));
+ } else if (!oidcConfigured && hasAnyAuthToken(env, false)) {
+ checks.push(warning('api-users', 'Only shared role tokens are configured, so audit events cannot name the person who acted. Prefer SMART_ESGP_API_USERS or OIDC.'));
  }
 
  if (production && !oidcConfigured && !hasAuditorToken(env, production)) {
