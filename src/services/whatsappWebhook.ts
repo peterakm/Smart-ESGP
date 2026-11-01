@@ -328,8 +328,10 @@ const getActivitySource = (
  return 'default';
 };
 
+// Activity is a free string on the session; fall back to a generic word
+// rather than throwing on an unexpected or missing value.
 const activityLabel = (activity: Waypoint['activity'], language: 'BM' | 'EN') => {
- const labels: Record<Waypoint['activity'], { BM: string; EN: string }> = {
+ const labels: Record<string, { BM: string; EN: string }> = {
  harvest: { BM: 'tuai', EN: 'harvest' },
  prune: { BM: 'cantas', EN: 'prune' },
  spray: { BM: 'sembur/racun', EN: 'spray' },
@@ -337,7 +339,7 @@ const activityLabel = (activity: Waypoint['activity'], language: 'BM' | 'EN') =>
  inspect: { BM: 'semakan kebun', EN: 'farm inspection' },
  };
 
- return labels[activity][language];
+ return labels[activity ?? '']?.[language] ?? (language === 'EN' ? 'farm activity' : 'aktiviti kebun');
 };
 
 const activityQuestion = (language: 'BM' | 'EN') => {

@@ -1,4 +1,4 @@
-import type { WhatsAppDeliveryStatus, WhatsAppInboundMessage } from '../contracts/whatsapp';
+import type { WhatsAppDeliveryStatus, WhatsAppFarmerSession, WhatsAppInboundMessage } from '../contracts/whatsapp';
 import type { SmartEsgpRepository } from '../server/smartEsgpRepository';
 import { createSystemAuditEvent, maskPhoneNumber } from '../server/systemAudit';
 import { resolveWhatsAppClaimTtlMs } from '../server/whatsappClaimLease';
@@ -213,7 +213,9 @@ export const processWhatsAppWebhook = async (
  },
  })),
  ...result.events
- .filter((event) => event.session.identityStatus === 'conflict' && event.session.identityConflict)
+ .filter((event): event is typeof event & { session: WhatsAppFarmerSession } =>
+ event.session?.identityStatus === 'conflict' && !!event.session.identityConflict
+ )
  .map((event) => createSystemAuditEvent({
  service: options.serviceName,
  action: 'whatsapp.identity.conflict',
@@ -290,7 +292,7 @@ export const processWhatsAppWebhook = async (
  intent: event.reply.intent,
  farmerId: event.reply.farmerId,
  outboundMode: sendResults[index]?.mode,
- sessionStep: event.session.step,
+ sessionStep: event.session?.step,
  },
  })),
  ...evidenceRecords.map((record) => createSystemAuditEvent({

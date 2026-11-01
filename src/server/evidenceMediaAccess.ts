@@ -20,7 +20,8 @@ const assertStoredEvidenceMedia = (record: EvidenceRecord) => {
  throw new Error('Evidence media is not available for access.');
  }
 
- return record.mediaStorage;
+ // Restate storageKey so callers get it typed as present, not optional.
+ return { ...record.mediaStorage, storageKey: record.mediaStorage.storageKey };
 };
 
 export const resolveLocalEvidenceMediaPath = (
