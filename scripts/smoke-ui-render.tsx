@@ -14,7 +14,7 @@ const baseProps = {
   complianceEvaluation: null,
   onSelectFarmer: noop, onViewCertificate: noop, onClearFlag: noop,
   onApplyOverride: noop, onReviewEvidence: noop, onOpenEvidenceMedia: noop,
-  onIssueCertificate: noop,
+  onIssueCertificate: noop, onResolveIdentityConflict: noop,
 };
 
 function assertValidMarkup(markup: string) {
