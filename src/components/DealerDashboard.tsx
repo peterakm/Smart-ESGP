@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { CertificateRecord, ConsentRecord, EvidenceRecord, Farmer, FarmerStatus, SystemAuditEvent } from '../types';
-import type { WhatsAppFarmerSession, WhatsAppMonitoringEvent, WhatsAppProviderMessageClaim } from '../contracts/whatsapp';
+import type { FarmerFeedback, WhatsAppFarmerSession, WhatsAppMonitoringEvent, WhatsAppProviderMessageClaim } from '../contracts/whatsapp';
 import type { ComplianceEvaluation } from '../services/complianceEngine';
 import { summarizeWhatsAppClaims } from '../utils/whatsappClaims';
 import { getWhatsAppFailedSendEvents, getWhatsAppGpsReviewEvents } from '../utils/whatsappMonitoring';
@@ -890,7 +890,7 @@ const getMonitoringLocationValidationClass = (event: WhatsAppMonitoringEvent) =>
  return 'bg-slate-50 border-slate-200 text-slate-500';
 };
 
-const getFeedbackRiskClass = (riskLevel?: WhatsAppMonitoringEvent['reply']['feedback']['riskLevel']) => {
+const getFeedbackRiskClass = (riskLevel?: FarmerFeedback['riskLevel']) => {
  if (riskLevel === 'flagged') return 'bg-rose-50 border-rose-200 text-rose-700';
  if (riskLevel === 'watch') return 'bg-amber-50 border-amber-200 text-amber-700';
  return 'bg-emerald-50 border-emerald-200 text-emerald-700';
